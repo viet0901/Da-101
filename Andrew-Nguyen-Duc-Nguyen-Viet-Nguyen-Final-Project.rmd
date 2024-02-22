@@ -1,0 +1,353 @@
+---
+title: "Final Project"
+author: "Viet Nguyen, Andrew Nguyen, Duc Nguyen"
+date: "2023-04-18"
+output:
+  html_document:
+    toc_float:
+      toc_collapsed: true
+    code_folding: hide
+    theme: united
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
+
+library(tidyverse)
+library(ggthemes)
+library(maps)
+library(viridis)
+library(ggmap)
+library(GGally)
+library(ggfortify)
+library(MASS)
+library(lindia)
+library(stringr)
+library(lubridate)
+
+crimela <- read.csv("Crime_Data_from_2020_to_Present.csv")
+```
+
+
+# Introduction
+
+## 1. Background 
+
+Los Angeles, a city known for its beautiful beaches, iconic landmarks, and diverse communities. However, alongside its many positive attributes, LA is also known for its alarming high crime rates, which have been a cause of concern for many residents and visitors alike. Having experienced LA ourselves, we have seen first-hand the impact that the constant fear of crime can have on the city and its residents. From petty theft to violent crime, the effects of criminal activity can be felt across Los Angeles, and we understand the importance of addressing these concerns. Therefore, we want to conduct this analysis to hopefully map out a pattern and trend for criminal activities in Los Angeles as an effort to address the concerns for safety around this area. 
+
+## 2. Main Question
+
+With our intention and the data available, our main aim is to find out whether time, place, age, gender and ethnicity of the victim had an effect on the likelihood of criminal activities.
+
+
+## 3. Approaches
+
+The database that we are using for this analysis is called “Crime Data from 2020 Present.” This data is intended for public access and use and is available for download at [data.gov][https://catalog.data.gov/dataset/crime-data-from-2020-to-present], which was where we obtained it from. The dataset contains information on reported crimes in Los Angeles from January 2020 to the present, with recorded data on various crimes that occurred, including their type, location, date and time of occurrence, and status. Some of the variables that we might be using includes:
+
+- DATE.OCC: date that the crime occurred
+- TIME.OCC: time that the crime occurred/reported
+- AREA.NAME: name of he area where the crime occurred
+- Crm.Cd: the police code of the crime 
+- Crm.Cd.Desc: the corresponding crime name 
+- Vict.Age: age of the victim
+- Vict.Sex: sex of the victim
+- Vict.Descent: ethnicity of the victim
+- LAT: latitude of the location where the crime occurred
+- LON: longitude of the location where the crime occurred
+
+
+
+# Ethical Consideration
+
+We have identified an ethical concern regarding the tension between protecting the privacy of crime victims and their families while also gathering accurate information. Any errors in data collection could have unintended consequences, such as discouraging people from providing truthful information. 
+
+In addition to criminals, other stakeholders in the occurrence of crime include victims, offenders, and the community. Therefore, it is important to consider ethical values such as informed consent and confidentiality. Honesty and allegiance are also key values that should be taken into account. Additionally, statistical repercussions could occur if our analysis is based on biased or inaccurate data, leading to flawed conclusions and recommendations
+
+One possible outcome of this analysis is the discovery of factors that are strongly correlated with criminal activity, especially when dealing with sensitive information such as the location of the crime or the identity of the victim.. This information could potentially lead people to avoid certain areas or behaviors in order to mitigate unwanted outcomes. Overall, it is crucial to balance the need for accurate data with ethical considerations and a commitment to protect the rights and well-being of all stakeholders involved. To present our findings effectively, we must remain transparent, precise, and present the data in a manner that is easily understood by a diverse audience, without resorting to misleading or ambiguous language.
+
+# Data Exploration
+
+Our dataset contains criminal data from 2020 to April 4th, 2023. In order to use the data for our research, we will need to filter it to only include records from January 2023. We will also select specific columns including DATE.OCC, TIME.OCC, AREA.NAME, Crm.Cd, Crm.Cd.Desc, Vict.Age, Vict.Sex, Vict.Descent, LAT, and LON that we think might be useful for our research.
+
+However, the date and time columns are not formatted correctly for our use. To resolve this, we will convert the  DATE.OCC  column into separate MONTH, DATE, and YEAR columns and TIME.OCC to HOURS and MINUTES for further analysis.
+
+```{r, include=FALSE}
+crimela$DATE.OCC <- gsub(" [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} [AP]M", "", crimela$DATE.OCC)
+```
+
+```{r}
+crimela <- crimela %>% 
+  separate(DATE.OCC, c("MONTH", "DATE", "YEAR"), sep = "/")
+
+crimela$DATE <- as.numeric(crimela$DATE)
+crimela$MONTH <- as.numeric(crimela$MONTH)
+crimela$YEAR <- as.numeric(crimela$YEAR)
+crimela$Crm.Cd <- as.factor(crimela$Crm.Cd)
+
+crimelajanuary2023 <- crimela %>%
+   filter(MONTH == 01 , YEAR == 2023) 
+
+crimelajanuary2023 <- crimelajanuary2023 %>%
+  dplyr::select('MONTH', 'DATE', 'YEAR', 'TIME.OCC', 'AREA.NAME', 'Crm.Cd', 'Crm.Cd.Desc', 'Vict.Age', 'Vict.Sex','Vict.Descent', 'LAT', 'LON')
+```
+
+```{r, include=FALSE}
+crimelajanuary2023$TIME.OCC <- sprintf("%04d", as.numeric(crimelajanuary2023$TIME.OCC))
+crimelajanuary2023$TIME.OCC <- paste0(substr(crimelajanuary2023$TIME.OCC, 1, 2), ":", substr(crimelajanuary2023$TIME.OCC, 3, 4))
+```
+
+```{r}
+crimelajanuary2023 <- separate(crimelajanuary2023, TIME.OCC, into = c("HOURS", "MINUTES"), sep = ":")
+
+crimelajanuary2023$Vict.Sex <- factor(crimelajanuary2023$Vict.Sex,
+     levels = c("M","F","X"),
+     labels = c("Male", "Female", "Unidentified"))
+```
+
+
+Here are the glimpse into data after cleaning:
+```{r}
+glimpse(crimelajanuary2023)
+```
+
+
+To begin our analysis, we will examine the distribution of crime incidents in January 2023 across different areas in LA.
+
+```{r}
+LA = c(left=-118.5425, bottom=33.7323, right=-118.0893 ,top=34.108)
+LA_map <- get_stamenmap(LA, zoom = 10, maptype = "terrain")
+ggmap(LA_map, darken = 0.1) +
+  geom_point(data=crimelajanuary2023, color = "red", aes(x = LON, y = LAT), alpha = 0.03, size = 1) +
+  labs(title = "Distribution of crime in LA in January 2023", x= "Longitude", y= "Latitude")+
+  theme_classic()
+```
+
+Based on the map, we can observe that crime incidents in January 2023 are concentrated in the central area of Los Angeles, forming a shape that resembles the letter "T" in the map. As we move farther away from the center, the frequency of crime incidents decreases. However, it is also worth noting that outside of the central LA area, there are still significant numbers of crime incidents, particularly in areas around Marina del Rey and along the center line of the map. Understanding the pattern of crime occurrence can help us identify areas to avoid and where increased security measures may be necessary.
+
+To gain further insight into the areas with the highest crime rates, we have created a bar graph showcasing the top 10 areas with the most reported crimes.
+
+```{r}
+by_area <- aggregate(crimelajanuary2023$AREA.NAME, by = list(Area = crimelajanuary2023$AREA.NAME), FUN=length) 
+colnames(by_area) <- c("Area","Total")
+
+head(arrange(by_area,-Total),n=10) %>% ggplot(aes(reorder(Area, Total), Total, fill=Area)) +
+  geom_bar(fill = "grey", stat="identity") + 
+  geom_label(aes(label = Total), size = 3) +
+  coord_flip()+
+  ggtitle("Criminal Activity By Area in January 2023") +
+  xlab("Area") +
+  ylab("Total Crimes")+
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Based on our map analysis, it is not surprising that the top 10 areas with the most crime incidents are located in the central part of Los Angeles. Specifically, the central area had the highest number of crimes with over 1512 incidents, followed by other popular streets such as Southwest, 77th Street, Pacific, and Southeast with over 1000 crime incidents. Additionally, other areas in the top 10 list had at least 900 crime incidents. These alarming numbers could pose a threat to the safety of both native citizens and tourists, potentially impacting the city's reputation as a safe and welcoming destination for visitors.
+
+We also aim to analyze the top 10 most frequent crimes that occurred in Los Angeles in January 2023 as part of our research. To start, we will identify the top 10 most commonly occurring crimes.
+
+```{r}
+
+sorted<-sort(table(crimelajanuary2023$Crm.Cd.Desc), decreasing = TRUE)
+head(sorted, 10)
+```
+
+
+
+Then, we can create a bar plot to visualize the frequency of each crime and compare the differences between them.
+
+```{r}
+crimelajanuary2023$Crm.Cd.Desc <- ifelse(crimelajanuary2023$Crm.Cd.Desc == "THEFT FROM MOTOR VEHICLE - GRAND ($950.01 AND OVER)","THEFT FROM MOTOR VEHICLE", ifelse(crimelajanuary2023$Crm.Cd.Desc == "VANDALISM - FELONY ($400 & OVER, ALL CHURCH VANDALISMS)", "VANDALISM", ifelse(crimelajanuary2023$Crm.Cd.Desc == "ASSAULT WITH DEADLY WEAPON, AGGRAVATED ASSAULT", "ASSAULT WITH DEADLY WEAPON", crimelajanuary2023$Crm.Cd.Desc)))
+
+count23 <- summarise(group_by(crimelajanuary2023, Crm.Cd.Desc), Counts=length(Crm.Cd.Desc)) %>% arrange(desc(Counts))
+
+head(count23,n=10) %>% ggplot( aes(x=reorder(Crm.Cd.Desc,Counts), y=Counts)) +
+  geom_bar(aes(fill=Crm.Cd.Desc), stat="identity") + 
+   geom_label(aes(label = Counts), size = 4) +
+  coord_flip() +
+  labs(title = "Top 10 crimes in January 2023", x="",y="Count")+
+  theme(legend.position = "none")
+```
+
+This barplot highlights that vehicle theft was the most common crime in Los Angeles during January 2023, with over 2000 occurrences. It also indicates that theft, burglary, and assault or vandalism were among the most prevalent crimes, which is alarming as they pose a significant threat to public safety. The fact that each of these crimes occurred over 500 times in one month suggests that the existing security measures in Los Angeles may not be sufficient to deter criminals. Therefore, it is crucial to allocate additional resources to enhance security measures and ensure the safety of the city's residents. To gain further insight into the issue, it is important to consider factors such as sex, age, location, and time to determine their impact on the likelihood of crime occurrence. This knowledge can aid in identifying potential solutions to reduce crime rates and improve the overall security of Los Angeles.
+
+
+
+# Statistical Analysis and Interpretation
+
+The data exploration process has provided a comprehensive and basic understanding of the crime trends in Los Angeles for the month of January 2023. The next step is to conduct a series of statistical analysis to uncover any significant findings and establish a relationship between the different variables. Through a series of statistical tests and analyses, we seek to answer some of the key questions that have emerged from our exploratory analysis, including the impact of time, location, age, and gender on the likelihood of criminal activity. Our aim is to examine the relationships between different variables and identify any significant trends or patterns that may help us better understand the nature of crime in LA and inform more effective strategies for prevention and intervention.
+
+Let's start by taking a look at a visualization of frequency of criminal activity across the victim's age.
+
+```{r}
+crimelajanuary2023$Vict.Age <- ifelse(crimelajanuary2023$Vict.Age == 0, NA, crimelajanuary2023$Vict.Age)
+
+ggplot(crimelajanuary2023, aes(Vict.Age))+
+  geom_bar()+
+  labs(x = 'Age of victim', y = 'Frequency', title = 'Frequency of Crime by Victim Age', caption = "*January 2023")+
+  scale_x_continuous(breaks=seq(0, 100, 10))+
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The bar graph shows the distribution of crime victims by age, ranging from 0 to 100 years old. The graph displays a right-skewed distribution, indicating that most of the victims are concentrated on the older end of the spectrum. Notably, the frequency of crime increases dramatically from age 20, with the peak occurring at age 31, where there are approximately 480 cases in January 2023. After the peak, the frequency of crime gradually decreases, suggesting that individuals become less likely to become victims of crime as they age. Based on the data shown in the graph, it may be beneficial for law enforcement and community organizations to focus on developing crime prevention strategies that target individuals between the ages of 20 and 40, as they appear to be at a higher risk of being victims of crime.
+
+This distribution could be due to several factors. First, younger individuals may be more likely to engage in risky behavior or activities, such as staying out late at night or visiting high-crime areas, which can increase their likelihood of becoming victims of crime. Additionally, younger individuals may be more likely to be involved in gangs or other criminal activity, which can also increase their risk of victimization. As individuals age, they may become more aware of potential dangers and take steps to avoid them, such as avoiding certain areas or traveling in groups. Furthermore, older individuals may have greater access to resources, such as secure housing and transportation, which can reduce their risk of becoming victims of crime.
+
+The peak in the frequency of crime incidents at age 31 could be due to various factors as well. At this age, individuals may be at a transitional period in their lives, such as getting married, starting a family, or entering the workforce, which can increase their exposure to new environments and potentially risky situations. Additionally, individuals in this age group may be more likely to accumulate assets and wealth, making them targets for robbery or other types of crime.
+
+Let's run a linear regression test to analyze the relationship between age and the frequency of criminal activities.
+
+```{r}
+crimelaage <- crimelajanuary2023 %>%
+  group_by(Vict.Age) %>%
+  summarise(count1 = n())
+
+crimelaage <- lm(count1~Vict.Age, data = crimelaage)
+summary(crimelaage)
+```
+
+The model estimates that as a person gets one year older, the number of crime occurrences decreases by an average of 2.011 cases, which is expected as we have observed from the bar chart. The p-value associated with the victim's age is very small (5.46e-05), indicating strong evidence against the null hypothesis that there is no linear relationship between age and the number of criminal activities. The R-squared value of 0.1479 suggests that about 14.8% of the variability in the number of crime occurrences can be explained by victim age. Based on the results of the model, it can be concluded that the occurrence of crime is not solely determined by the victim's age. However, it is still possible that age plays a role in certain types of crimes or in combination with other factors.
+
+Based on the result of the previous test, we would like to further investigate the impact of another variable, specifically the number of hours in a day, on the occurrence of crimes.
+
+```{r}
+crimelahour <- crimelajanuary2023 %>%
+  group_by(HOURS) %>%
+  summarise(count = n())
+
+
+crimelahour$HOURS <- as.numeric(crimelahour$HOURS)
+crimehour <- lm(count~HOURS, data = crimelahour)
+summary(crimehour)
+```
+
+The linear regression shows the results conducted on the relationship between the frequency of crime per hour. The frequency of crime per hour and the hour of the day suggests a statistically significant positive relationship between the two variables. The coefficient for the hour variable is 24.888 with a standard error of 5.649, indicating that for every additional hour of the day, the frequency of crime increases by an average of 24.888 incidents. The model has an adjusted R-squared value of 0.4446, indicating that the 'HOURS' variable explains 44.46% of the variability in the frequency of crime per hour. The p-value of the F-statistic (0.0002239) is less than 0.05, suggesting that the model is a good fit and the results are reliable. Therefore, we can conclude that the hour of the day is a significant factor that influences the frequency of crime in LA. 
+
+With that in mind, in order to gain a more comprehensive understanding of the factors impacting the frequency of criminal activity in LA throughout hours of a day, we also made a visualization of the relationship between time the gender of the victim. For the sake of comparison, we will remove the 'unidentified' gender category, since that category is imposed on crimes without victim.
+
+```{r}
+crime_hour_gender <- crimelajanuary2023 %>% 
+  filter(Vict.Sex == c("Male","Female"))%>%
+  group_by(HOURS, Vict.Sex) %>% 
+  summarize(crime_count = n())
+
+crime_hour_gender$HOURS<-as.numeric(crime_hour_gender$HOURS)
+
+ggplot(crime_hour_gender, aes(HOURS, crime_count)) +
+  geom_line(aes(color = Vict.Sex)) +
+  scale_x_continuous(breaks=seq(0, 23, 1))+
+  scale_color_manual(values = c("blue", "magenta"), labels = c("Male", "Female"))+
+  labs(x = "Hour", y = "Count", title = "Crime Frequency by Hour and Gender", color = "Gender", caption = "*January 2023")+
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The line chart shows a clear pattern of criminal activity frequency with respect to gender and time. At the beginning of the day, both male and female victims experience a reletively similar frequency of crime, starting at around 150 cases at midnight and gradually dropping to around 50 cases at 5 am. However, a notable difference can be observed from 6am onwards. Female victims experience a sharp incline in crime frequency, reaching almost 200 cases at 6 am, whereas male victims show a gradual increase during the same time period. From 7 am to 10 am, female victim's frequency experienced fluctuation around the 100 - 200 range then finally reaching to its peak at 12 pm with around 250 cases, which is then followed by a sudden drop of nearly 100 cases in the next hour. In contrast, male victims show a fairly consistent increase in crime frequency throughout the day since 6am, with the peak of 240 cases at 6 pm. The day ends with both genders decreasing gradually.
+
+We can make out from the graph that both male and female victims experience the highest frequency of crime in the evening hours, with male victims reaching their peak at 6 pm and female victims reaching their peak at 12 pm. This difference in crime frequency between male and female victims during the peak hours can be attributed to several factors. Firstly, it is possible that men and women have different daily routines, which may make them more vulnerable to crime at different times of the day. For instance, women may be more likely to be out and about during the day, while men may be more likely to be out at night. This could explain why female victims reach their peak at 12 pm when many women are likely to be out running errands or doing other activities outside of the home.
+
+Another possible reason for the different peak hours for male and female victims could be related to the types of crimes they are more likely to experience. For example, women are more likely to experience domestic violence or sexual assault, which may occur more frequently during the day when they are in their homes or workplaces. In contrast, men may be more likely to experience violent crimes such as robbery, which may occur more frequently at night when there are fewer witnesses around.
+
+These findings suggest that law enforcement agencies in LA should pay special attention to the evening hours, particularly during the peak hours of 6 pm for male victims and 12 pm for female victims in order to reduce the overall frequency of crime in the city. Additionally, it highlights the need for gender-specific crime prevention strategies to address the different patterns observed for male and female victims.
+
+Besides gender, the victim's ethnicity is also considered to be one of the affecting factors in terms of crime frequency. Below is another line graph showing the occurrence of crime throughout the day on different victim's ethnicities. To make the visualization clear, we will categorize victim ethnicity in to 4 groups, which are 'White,' 'Black,' 'Asian,' 'Hispanic,' and 'Other' - indicates the remaining of identified ethnicity.
+
+```{r}
+crimelajanuary2023$Vict.Category <- ifelse(crimelajanuary2023$Vict.Descent %in% c("A", "C", "D", "F", "J", "K", "V", "Z"), "Asian",
+                                           ifelse(crimelajanuary2023$Vict.Descent == "W", "White",
+                                                  ifelse(crimelajanuary2023$Vict.Descent == "H", "Hispanic",
+                                                  ifelse(crimelajanuary2023$Vict.Descent == "B", "Black", "Other"))))
+crime_hour_eth <- crimelajanuary2023 %>% 
+  group_by(HOURS, Vict.Category) %>% 
+  summarize(crime_count = n())
+
+crime_hour_eth$HOURS<-as.numeric(crime_hour_eth$HOURS)
+
+ggplot(crime_hour_eth, aes(HOURS, crime_count)) +
+  geom_line(aes(color = Vict.Category)) +
+  scale_x_continuous(breaks=seq(0, 24, 1))+
+  labs(x = "Hour", y = "Count", title = "Crime Frequency by Hour and Victim Ethnicity", color = "Victim Ethnicity", caption = "*January 2023")+
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+The line graph shows the trend of crime incidents across different ethnicities in LA over a 24-hour period. The graph reveals that the number of crime incidents on Asian people is the lowest compared to all other ethnic groups, consistently remaining under 100 cases. On the other hand, the lines for Black and White start from around 180 cases at 12 am and follow a similar trend, decreasing from 12 am to 5 am before increasing and hitting their peak at 12 pm, followed by some fluctuation throughout the rest of the day. The remaining two groups, Hispanic and Other, start at higher numbers of crime incidents with Hispanic at 250 and Other at 190 at 12 am. Both groups then start to decrease before gradually increasing to their peak. The Other group hits its peak at over 400 cases, while Hispanic only reaches 350. 
+
+Based on the line graph, it can be concluded that the frequency of crime incidents across ethnicities in LA varies significantly. The consistent low number of incidents on Asian people may be due to their strong emphasis on family values and cultural norms, which prioritize education and social order. On the other hand, the similar trends in the black and white ethnic groups may reflect a shared history of systemic racism and inequality that continues to impact their access to resources and opportunities. The peak around noon for these groups could also be attributed to the presence of commercial and business areas where crime tends to occur more frequently. For Hispanic and Other ethnic groups, the higher starting number of incidents could be due to their disproportionate representation in crime-prone areas or the presence of gangs and other criminal organizations. However, the gradual decrease followed by a later peak suggests that targeted interventions focused on addressing the root causes of crime, such as poverty and lack of access to resources, could be effective in reducing crime in these communities. Overall, the line graph underscores the importance of taking a nuanced and multifaceted approach to understanding crime and developing effective solutions that address the complex interplay of social, economic, and historical factors.
+
+Finally, to put all of the above factors into account, we're going create a prediction model to identify the most prevalent time for crime in Los Angeles based on gender, age, ethnicity, and location.
+
+We will first predict the most likely time of day for criminal occurrence for a person who fits the following criteria: male, 21 years old, currently located in Wilshire, and of Asian ethnicity.
+
+```{r}
+multi_re<-lm(HOURS ~ Vict.Sex + Vict.Age + AREA.NAME + Vict.Category, data = crimelajanuary2023)
+
+se1<-data.frame(Vict.Sex = "Male", Vict.Age = 21, AREA.NAME = "Wilshire", Vict.Category = "Asian")
+
+se2<-data.frame(Vict.Sex = "Female", Vict.Age = 30, AREA.NAME = "Hollywood", Vict.Category = "White")
+
+se3 <- data.frame(Vict.Sex = "Male", Vict.Age = 99, AREA.NAME = "Olympic", Vict.Category = "Black")
+predict(multi_re, se1)
+```
+
+Based on the prediction result of 13.97 from the predict function, it suggests such a person should exercise caution when going out or engaging in any activity around 2pm.
+
+We will try another prediction with different criteria: female, 30 years old, currently located in Hollywood, and White ethnicity.
+
+```{r}
+predict(multi_re, se2)
+```
+
+Based on the result of approximately 12.5 from the prediction function, it can be inferred that individuals matching the given criteria should be cautious or refrain from going out around 12:30 pm.
+
+For the third prediction, we will assume that the person is a Black Male, 99 years old and currently lives in Olympic boulevard. 
+
+```{r}
+predict(multi_re, se3)
+```
+
+The result suggests that based on the given description and setting, this individual will most likely become a victim of crime at around 1pm and therefore should be cautious.
+
+# Conclusion
+
+## Summary
+
+Based on our statistical analysis, we can arrive at the conclusion that the time of day, location, age, gender, and ethnicity of a victim are all contributing factors that impact the likelihood of criminal activities in Los Angeles.
+
+One of the most prominent of these factors is the location of the crime. As seen on our plotted map, crimes tend to occur more frequently in crowded and downtown areas than in the outer parts of the city. This suggests that individuals living or working in downtown areas are more vulnerable to criminal activities than those in other parts of the city.
+
+Another important factor that affects the likelihood of crime is the time of day. Our analysis showed that the majority of crimes happen during the evening and night hours. This could be due to several reasons, such as decreased visibility, fewer people around, and higher rates of alcohol and drug use during these hours. Therefore, individuals out during these hours may face a higher risk of becoming victims of criminal activities.
+
+Gender also plays a role in the probability of victimization. Our analysis found that both male and female victims experience the highest frequency of crime in the evening hours, but the peak times differ for each gender. Male victims reach their peak at 6 pm, while female victims reach theirs at 12 pm. This suggests that there may be differences in the daily routines and activities of men and women that make them more vulnerable to crime at different times.
+
+Moreover, age is another significant factor that influences the likelihood of criminal activities. Our analysis revealed that crime occurs most frequently among individuals aged 20 and above, with a peak at age 31, after which the frequency gradually decreases. This finding implies that young adults are more susceptible to criminal activities than older individuals, possibly due to their involvement in risky behavior or criminal activity.
+
+Finally, ethnicity was found to be a significant factor in predicting the probability of criminal victimization. Our data showed that certain ethnic groups, such as White and Hispanics, have a higher likelihood of experiencing criminal activities than others. This is likely due to various societal factors such as group population, economic disadvantage, social marginalization, and cultural stereotypes.
+
+Based on our preliminary findings, we can come up with a predictive system that takes into account the gender, age, ethnicity, and location of the victim to determine the most prevalent time for criminal activities. This system could be valuable to law enforcement agencies in developing strategies to prevent crime and safeguard the residents of Los Angeles. By utilizing this system, law enforcement officials could concentrate their efforts on high-risk areas and high-risk groups during peak crime hours. Additionally, the system could help allocate resources to areas that require the most attention, ultimately leading to a decrease in criminal activity in the city.
+
+## Some limitations and concerns
+
+Regardless, it is important to acknowledge some of the limitations of this analysis. Firstly, the data used in this study was limited to reported crimes, and not all criminal activities were reported. This could lead to an underestimation of the true extent of criminal activities. Additionally, the data was from a specific geographic region, and crime patterns may differ in other regions or countries. 
+
+Another limitation of this analysis is that it only focuses on the demographic characteristics of the victim and does not take into account other important factors such as socioeconomic status, education level, and occupation. These factors can also play a significant role in determining the likelihood of criminal activities. For example, individuals with lower socioeconomic status and education levels may be at a higher risk of being victims of crime due to the lack of resources and opportunities, which may lead them to live in high-crime areas or engage in risky behaviors.
+
+Furthermore, the analysis only looks at the relationship between the demographic characteristics of the victim and the likelihood of criminal activities, without considering the factors that may contribute to criminal behavior. Factors such as poverty, inequality, social disorganization, and lack of access to resources and opportunities can all contribute to the occurrence of criminal activities. Therefore, policymakers and law enforcement agencies should not only focus on the demographic characteristics of the victim but also address the root causes of criminal activities by developing policies and programs that address poverty, inequality, and social disorganization.
+
+## What's next?
+
+To further improve this data analysis, there are several next steps that could be taken. As stated above, it would be beneficial to include more demographic factors in the analysis. While this study focused on age, gender, ethnicity, place, and time, there are many other demographic factors that could have an impact on crime rates, such as income, education, and employment status. Including these additional factors in the analysis could provide a more comprehensive understanding of the relationship between crime and demographics. 
+
+Additionally, another possible step is to expand the time period of the data collection. As we have mentioned earlier, the data analysis was only conducted during the month of January, which is a relatively short time period. Therefore, to obtain a more comprehensive and accurate picture of the relationship between crime and other factors, it would be useful to expand the analysis to cover a longer time period, such as a year. This would allow for a more in-depth analysis of seasonal trends in crime rates and demographic factors, as well as provide a larger sample size for statistical analysis.
+
+In addition to our proposed predictive system and for the overall benefit of crime prevention system in the US, the next step could be to broaden the scope of our data collection beyond the analyzed city of Los Angeles. Since crime rates and demographic factors can vary significantly between different cities and regions, a more comprehensive analysis that includes data from multiple cities would yield a more diverse and representative sample. By doing so, we could potentially identify any regional patterns or variations in crime rates and demographic factors that may not be immediately evident in a single city. This broader perspective would be particularly beneficial for law enforcement officials who operate across multiple jurisdictions, enabling them to more effectively allocate resources and develop targeted crime prevention strategies that are tailored to the unique needs of each city or region. Ultimately, this approach could lead to a better understanding of the complex relationship between crime and demographic factors, and help facilitate the development of evidence-based policies and interventions that promote community safety and well-being.
+
+
+# Reference
+
+https://catalog.data.gov/dataset/crime-data-from-2020-to-present
+
+https://data.lacity.org/Public-Safety/Crime-Data-from-2020-to-Present/2nrs-mtv8
